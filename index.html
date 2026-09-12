@@ -25,6 +25,14 @@
 
   <div class="topbar-controls">
     <label class="ctl">
+      <span class="ctl-label">練習</span>
+      <select id="modeSelect" title="何を評価するかを選びます">
+        <option value="speed">速度</option>
+        <option value="assist">補完</option>
+        <option value="accuracy">正確性</option>
+      </select>
+    </label>
+    <label class="ctl">
       <span class="ctl-label">カテゴリ</span>
       <select id="categorySelect"></select>
     </label>
@@ -39,11 +47,14 @@
 </header>
 
 <section class="statbar" id="statbar">
-  <div class="stat"><span class="stat-val" id="statTime">0.0</span><span class="stat-unit">秒</span><span class="stat-key">時間</span></div>
-  <div class="stat stat-hero"><span class="stat-val" id="statCpm">0</span><span class="stat-unit">cpm</span><span class="stat-key">実効速度</span></div>
-  <div class="stat"><span class="stat-val" id="statRaw">0</span><span class="stat-unit">cpm</span><span class="stat-key">生打鍵</span></div>
-  <div class="stat"><span class="stat-val" id="statBoost">1.00</span><span class="stat-unit">×</span><span class="stat-key">補完効率</span></div>
-  <div class="stat"><span class="stat-val" id="statAcc">100</span><span class="stat-unit">%</span><span class="stat-key">正確度</span></div>
+  <div class="stat" data-metric="time"><span class="stat-val" id="statTime">0.0</span><span class="stat-unit">秒</span><span class="stat-key">時間</span></div>
+  <div class="stat" data-metric="speed"><span class="stat-val" id="statCpm">0</span><span class="stat-unit">cpm</span><span class="stat-key">速度</span></div>
+  <div class="stat" data-metric="acc"><span class="stat-val" id="statAcc">100</span><span class="stat-unit">%</span><span class="stat-key">正確度</span></div>
+  <div class="stat" data-metric="keys"><span class="stat-val" id="statKeys">0</span><span class="stat-unit">打</span><span class="stat-key">打鍵数</span></div>
+  <div class="stat" data-metric="miss"><span class="stat-val" id="statMiss">0</span><span class="stat-unit">回</span><span class="stat-key">ミス</span></div>
+  <div class="stat-sep" id="statSep">参考</div>
+  <div class="stat" data-metric="raw"><span class="stat-val" id="statRaw">0</span><span class="stat-unit">cpm</span><span class="stat-key">生打鍵</span></div>
+  <div class="stat" data-metric="boost"><span class="stat-val" id="statBoost">1.00</span><span class="stat-unit">×</span><span class="stat-key">補完効率</span></div>
   <div class="progress-wrap">
     <div class="progress-meta"><span id="statProgressLabel">0 / 0 文字</span><span id="statHint" class="hint"></span></div>
     <div class="progress"><div class="progress-bar" id="progressBar"></div></div>
@@ -108,12 +119,7 @@
   <div class="modal-card modal-result">
     <h3 id="resultTitle">完了</h3>
     <p class="modal-lead" id="resultSub"></p>
-    <div class="result-grid">
-      <div class="rstat rstat-hero"><span class="rstat-val" id="rCpm">0</span><span class="rstat-key">実効速度 (cpm)</span><span class="rstat-note" id="rCpmBest"></span></div>
-      <div class="rstat"><span class="rstat-val" id="rTime">0.0</span><span class="rstat-key">タイム (秒)</span><span class="rstat-note" id="rTimeBest"></span></div>
-      <div class="rstat"><span class="rstat-val" id="rAcc">100</span><span class="rstat-key">正確度 (%)</span><span class="rstat-note" id="rMiss"></span></div>
-      <div class="rstat"><span class="rstat-val" id="rBoost">1.00</span><span class="rstat-key">補完効率 (×)</span><span class="rstat-note" id="rKeys"></span></div>
-    </div>
+    <div class="result-grid" id="resultGrid"></div>
     <p class="result-comment" id="resultComment"></p>
     <div class="modal-actions">
       <button class="btn" id="resultNext">次の課題へ</button>

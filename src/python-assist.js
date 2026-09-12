@@ -314,10 +314,13 @@ export function registerPythonCompletion(monaco, getOptions) {
       });
 
       const suggestions = [];
+      // `.` の直後かどうかだけで判定する。`g[u].append` や `self.par[x].pop` のように
+      // 受け手が添字式のことが多く、識別子に限定すると候補が出なくなる。
+      const isMember = /\.\s*[A-Za-z0-9_]*$/.test(before);
       const dot = /([A-Za-z_][A-Za-z0-9_]*)\s*\.\s*[A-Za-z0-9_]*$/.exec(before);
 
-      if (dot) {
-        const members = MODULE_MEMBERS[dot[1]];
+      if (isMember) {
+        const members = dot ? MODULE_MEMBERS[dot[1]] : null;
         if (members) {
           for (const [label, kind, detail, doc] of members) {
             suggestions.push(item(monaco, { label, kind, detail, doc, sort: '0' + label }));

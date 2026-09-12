@@ -8,6 +8,7 @@ const RECORDS_KEY = 'cp-typing:records:v1';
 const LAST_KEY = 'cp-typing:last:v1';
 
 const DEFAULT_SETTINGS = {
+  mode: 'speed',
   suggest: true,
   quickSuggest: true,
   // VS Code の既定は on だが、候補が開いたまま Enter を押すと改行が入らず
@@ -429,17 +430,65 @@ function flashHint(text, bad = false) {
   el.classList.toggle('bad', bad && !!text);
 }
 
+// 主評価はモードごとに 1 つだけ。残りは参考値として小さく添える。
+// 速度モードでは補完を使ったか手で打ったかを問わない ―― 同じコードが同じ時間で
+// 出せるなら手段はどちらでもよく、評価すべきはコードが画面に出る速さだから。
+// 「補完を使いこなす」「打ち直しを減らす」は別の目的なので専用モードに分けてある。
+const MODES = {
+  speed: {
+    name: '速度',
+    hero: 'speed',
+    sub: ['acc'],
+    ref: ['keys', 'boost', 'raw'],
+    best: (r) => (r.cpm > 0 ? `${Math.round(r.cpm)} cpm` : null),
+  },
+  assist: {
+    name: '補完',
+    hero: 'keys',
+    sub: ['boost'],
+    ref: ['speed', 'acc'],
+    best: (r) => (Number.isFinite(r.keys) ? `${r.keys} 打鍵` : null),
+  },
+  accuracy: {
+    name: '正確性',
+    hero: 'acc',
+    sub: ['miss'],
+    ref: ['speed', 'keys'],
+    best: (r) => (Number.isFinite(r.miss) ? `ミス ${r.miss}` : null),
+  },
+};
+
+const currentMode = () => MODES[settings.mode] || MODES.speed;
+
+/** 主指標・補助指標・参考値の並びと強調をモードに合わせて切り替える。 */
+function applyMode() {
+  const m = currentMode();
+  const main = ['time', m.hero, ...m.sub];
+  for (const el of document.querySelectorAll('.statbar [data-metric]')) {
+    const k = el.dataset.metric;
+    const i = main.indexOf(k);
+    const r = m.ref.indexOf(k);
+    el.hidden = i < 0 && r < 0;
+    el.classList.toggle('stat-hero', k === m.hero);
+    el.classList.toggle('stat-ref', r >= 0);
+    el.style.order = i >= 0 ? i : 10 + r;
+  }
+  $('statSep').hidden = m.ref.length === 0;
+  refreshProblemOptions();
+}
+
 function renderStats(sec) {
   const cpm = sec > 0 ? (state.prefix / sec) * 60 : 0;
   const raw = sec > 0 ? (state.keystrokes / sec) * 60 : 0;
   const boost = state.keystrokes > 0 ? state.prefix / state.keystrokes : 0;
-  const acc = accuracy();
 
   $('statTime').textContent = sec.toFixed(1);
   $('statCpm').textContent = Math.round(cpm);
   $('statRaw').textContent = Math.round(raw);
   $('statBoost').textContent = boost.toFixed(2);
-  $('statAcc').textContent = Math.round(acc);
+  $('statAcc').textContent = Math.round(accuracy());
+  $('statKeys').textContent = state.keystrokes;
+  $('statMiss').textContent = state.mistakes;
 }
 
 function accuracy() {
@@ -457,9 +506,15 @@ function finish() {
   stopTick();
 
   const sec = elapsedSeconds();
-  const cpm = sec > 0 ? (state.target.length / sec) * 60 : 0;
-  const boost = state.keystrokes > 0 ? state.target.length / state.keystrokes : 0;
-  const acc = accuracy();
+  const result = {
+    sec,
+    chars: state.target.length,
+    keys: state.keystrokes,
+    miss: state.mistakes,
+    acc: accuracy(),
+    cpm: sec > 0 ? (state.target.length / sec) * 60 : 0,
+    boost: state.keystrokes > 0 ? state.target.length / state.keystrokes : 0,
+  };
 
   inputEditor.updateOptions({ readOnly: true });
   $('panes').querySelector('.pane-input').classList.add('done');
@@ -467,65 +522,133 @@ function finish() {
   paintProgress();
   renderStats(sec);
 
-  const best = saveRecord({ cpm, sec, acc, boost });
-  showResult({ cpm, sec, acc, boost, best });
+  showResult(result, saveRecord(result));
 }
 
-function saveRecord({ cpm, sec, acc, boost }) {
+// 全指標の自己ベストをまとめて持つ。どれを主役として見せるかはモードが決める。
+function saveRecord(r) {
   const id = state.problem.id;
   if (id === CUSTOM_ID) return null;
 
-  const prev = records[id] || { cpm: 0, sec: Infinity, acc: 0, boost: 0, runs: 0 };
-  const improved = { cpm: cpm > prev.cpm, sec: sec < prev.sec, acc: acc > prev.acc };
+  const old = records[id] || {};
+  const prev = {
+    cpm: old.cpm ?? 0,
+    sec: old.sec ?? Infinity,
+    acc: old.acc ?? 0,
+    boost: old.boost ?? 0,
+    keys: old.keys ?? Infinity,
+    miss: old.miss ?? Infinity,
+    runs: old.runs ?? 0,
+  };
+  const improved = {
+    cpm: r.cpm > prev.cpm,
+    sec: r.sec < prev.sec,
+    acc: r.acc > prev.acc,
+    boost: r.boost > prev.boost,
+    keys: r.keys < prev.keys,
+    miss: r.miss < prev.miss,
+  };
 
   records[id] = {
-    cpm: Math.max(prev.cpm, cpm),
-    sec: Math.min(prev.sec, sec),
-    acc: Math.max(prev.acc, acc),
-    boost: Math.max(prev.boost, boost),
+    cpm: Math.max(prev.cpm, r.cpm),
+    sec: Math.min(prev.sec, r.sec),
+    acc: Math.max(prev.acc, r.acc),
+    boost: Math.max(prev.boost, r.boost),
+    keys: Math.min(prev.keys, r.keys),
+    miss: Math.min(prev.miss, r.miss),
     runs: prev.runs + 1,
   };
   writeJSON(RECORDS_KEY, records);
   return { prev, improved, runs: records[id].runs };
 }
 
-function showResult({ cpm, sec, acc, boost, best }) {
+const CARDS = {
+  speed: (r) => ['速度 (cpm)', Math.round(r.cpm)],
+  time: (r) => ['タイム (秒)', r.sec.toFixed(1)],
+  acc: (r) => ['正確度 (%)', Math.round(r.acc)],
+  keys: (r) => ['打鍵数', r.keys],
+  miss: (r) => ['ミス (回)', r.miss],
+  boost: (r) => ['補完効率 (×)', r.boost.toFixed(2)],
+  raw: (r) => ['生打鍵 (cpm)', r.sec > 0 ? Math.round((r.keys / r.sec) * 60) : 0],
+};
+
+const BESTS = {
+  speed: (b) => [b.improved.cpm, b.prev.cpm, (v) => `${Math.round(v)} cpm`],
+  time: (b) => [b.improved.sec, b.prev.sec, (v) => `${v.toFixed(1)} 秒`],
+  acc: (b) => [b.improved.acc, b.prev.acc, (v) => `${Math.round(v)} %`],
+  keys: (b) => [b.improved.keys, b.prev.keys, (v) => `${v} 打鍵`],
+  miss: (b) => [b.improved.miss, b.prev.miss, (v) => `${v} 回`],
+  boost: (b) => [b.improved.boost, b.prev.boost, (v) => `${v.toFixed(2)} ×`],
+};
+
+function bestNote(metric, best) {
+  if (!best || !BESTS[metric]) return '';
+  const [up, prev, fmt] = BESTS[metric](best);
+  if (best.runs === 1 || !Number.isFinite(prev)) return '初回記録';
+  return up ? `自己ベスト更新 (前 ${fmt(prev)})` : `自己ベスト ${fmt(prev)}`;
+}
+
+function showResult(r, best) {
+  const m = currentMode();
   $('resultTitle').textContent = state.problem.title;
   $('resultSub').textContent =
-    `${state.target.length} 文字を ${state.keystrokes} 打鍵で入力（${best ? `${best.runs} 回目` : '記録は保存されません'}）`;
+    `${m.name}モード ・ ${r.chars} 文字 / ${r.keys} 打鍵 / ${r.sec.toFixed(1)} 秒` +
+    (best ? ` ・ ${best.runs} 回目` : ' ・ 記録は保存されません');
 
-  $('rCpm').textContent = Math.round(cpm);
-  $('rTime').textContent = sec.toFixed(1);
-  $('rAcc').textContent = Math.round(acc);
-  $('rBoost').textContent = boost.toFixed(2);
+  const metrics = [m.hero, 'time', ...m.sub, ...m.ref].filter((k, i, a) => a.indexOf(k) === i);
+  const grid = $('resultGrid');
+  grid.replaceChildren();
 
-  const firstRun = best && best.runs === 1;
-  $('rCpmBest').textContent =
-    !best ? '' : best.improved.cpm ? (firstRun ? '初回記録' : `自己ベスト更新 (前 ${Math.round(best.prev.cpm)})`) : `自己ベスト ${Math.round(best.prev.cpm)}`;
-  $('rTimeBest').textContent =
-    !best || firstRun ? '' : best.improved.sec ? `自己ベスト更新 (前 ${best.prev.sec.toFixed(1)}s)` : `自己ベスト ${best.prev.sec.toFixed(1)}s`;
-  $('rMiss').textContent = `ミス ${state.mistakes} 回`;
-  $('rKeys').textContent = `補完が ${Math.max(0, state.target.length - state.keystrokes)} 打鍵を肩代わり`;
+  metrics.forEach((metric, i) => {
+    const [key, value] = CARDS[metric](r);
+    const isRef = m.ref.includes(metric);
+    const card = document.createElement('div');
+    card.className = 'rstat' + (i === 0 ? ' rstat-hero' : isRef ? ' rstat-ref' : '');
+    // 自己ベストは主評価まわりだけに出す。参考値に併記すると何を見ればいいのか散る。
+    for (const [cls, text] of [['rstat-val', value], ['rstat-key', key], ['rstat-note', isRef ? '' : bestNote(metric, best)]]) {
+      const span = document.createElement('span');
+      span.className = cls;
+      span.textContent = text;
+      card.appendChild(span);
+    }
+    grid.appendChild(card);
+  });
 
-  $('resultComment').textContent = advise({ cpm, acc, boost });
+  $('resultComment').textContent = advise(r, settings.mode);
   $('resultModal').hidden = false;
   $('resultRetry').focus();
 }
 
-function advise({ cpm, acc, boost }) {
-  if (acc < 85) {
-    return 'ミスが多めです。競プロでは打ち直しよりデバッグの方が高くつくので、まずは正確度 95% を目標にゆっくり打ちましょう。';
+function advise(r, mode) {
+  if (mode === 'accuracy') {
+    if (r.miss === 0) return 'ノーミスです。この精度を保ったまま、速度モードで少しずつ上げていきましょう。';
+    if (r.acc < 90) {
+      return `ミス ${r.miss} 回。打ち直しの時間そのものより、本番で気づかずに提出してしまう方が高くつきます。速度を捨ててでも、まずノーミスを 1 回作りましょう。`;
+    }
+    return `ミス ${r.miss} 回。あと少しでノーミスです。詰まりやすい記号（[ ] : , _ ）を意識してみてください。`;
   }
-  if (boost < 1.15) {
-    return '補完をほとんど使えていません。3〜4 文字打ったところで Tab を押す癖をつけると、この課題はもっと少ない打鍵で書けます。スニペット（li, nm, fr など）も試してみてください。';
+
+  if (mode === 'assist') {
+    if (r.boost < 1.2) {
+      return `${r.chars} 文字を ${r.keys} 打鍵。ほぼ手打ちです。3〜4 文字打って Tab、長い変数名は一度書けば呼び戻せます。スニペット（li / nm / fr / uf など）も試してください。`;
+    }
+    if (r.boost < 1.8) {
+      return `${r.chars} 文字を ${r.keys} 打鍵（${r.boost.toFixed(2)} 倍）。効き始めています。同じ課題をもう一度、今度は打鍵数だけを見て縮めてみましょう。`;
+    }
+    return `${r.chars} 文字を ${r.keys} 打鍵（${r.boost.toFixed(2)} 倍）。かなり削れています。この課題は十分でしょう。`;
   }
-  if (boost >= 1.6 && acc >= 95) {
-    return '補完をかなり活用できています。この打鍵効率なら実戦でも手が止まりません。次は 1 段上のカテゴリに進んでみましょう。';
+
+  // 速度モード。補完を使えという話はしない ―― 速ければ手段は問わない。
+  if (r.acc < 85) {
+    return '打ち直しに時間を取られています。正確性モードで一度ノーミスを作ってから戻ると、速度はそのまま上がります。';
   }
-  if (cpm >= 300 && acc >= 95) {
-    return '十分に速いです。同じ課題を繰り返すより、未経験のカテゴリを増やした方が実戦での詰まりが減ります。';
+  if (r.cpm >= 400) {
+    return '十分に速いです。同じ課題を繰り返すより、未経験のカテゴリを増やす方が実戦での手の止まりが減ります。';
   }
-  return '良いペースです。同じ課題をもう 2〜3 回打つと手が形を覚えて、考えながらでも打てるようになります。';
+  if (r.cpm >= 250) {
+    return '実戦で困らない速度域です。長めの課題（Union-Find やダイクストラ）でも最後まで手が止まらないか確かめてみましょう。';
+  }
+  return '同じ課題をもう 2〜3 回打つと手が形を覚えます。まずはこの課題で自己ベストを 1 回更新してみてください。';
 }
 
 /* ------------------------------------------------------------------ */
@@ -551,20 +674,32 @@ function buildSelectors() {
 function refreshProblemOptions() {
   const catId = $('categorySelect').value;
   const sel = $('problemSelect');
+  const keep = sel.value;
+  const mode = currentMode();
   const list = catId === '*' ? PROBLEMS : PROBLEMS.filter((p) => p.category === catId);
+
   sel.innerHTML = '';
   for (const p of list) {
     const o = document.createElement('option');
     o.value = p.id;
     const rec = records[p.id];
+    const best = rec ? mode.best(rec) : null;      // 表示する自己ベストもモードに合わせる
     const star = '★'.repeat(p.level) + '☆'.repeat(3 - p.level);
-    o.textContent = `${star} ${p.title}${rec ? `  (best ${Math.round(rec.cpm)} cpm)` : ''}`;
+    o.textContent = `${star} ${p.title}${best ? `  (best ${best})` : ''}`;
     sel.appendChild(o);
   }
+  if (keep && list.some((p) => p.id === keep)) sel.value = keep;
   return list;
 }
 
 function wireUI() {
+  $('modeSelect').addEventListener('change', (e) => {
+    settings.mode = e.target.value;
+    writeJSON(SETTINGS_KEY, settings);
+    applyMode();
+    restart();            // 評価対象が変わるので、走行中なら測り直す
+  });
+
   $('categorySelect').addEventListener('change', () => {
     const list = refreshProblemOptions();
     if (list.length) loadProblem(list[0]);
@@ -675,6 +810,8 @@ function wireUI() {
 }
 
 function applySettingsToForm() {
+  $('modeSelect').value = MODES[settings.mode] ? settings.mode : 'speed';
+  applyMode();
   $('optSuggest').checked = settings.suggest;
   $('optQuickSuggest').checked = settings.quickSuggest;
   $('optAcceptEnter').checked = settings.acceptEnter;

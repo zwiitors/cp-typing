@@ -18,6 +18,9 @@
 
 * { box-sizing: border-box; }
 
+/* .stat などに display を当てているので、UA の [hidden] を勝たせる */
+[hidden] { display: none !important; }
+
 html, body {
   height: 100%;
   margin: 0;
@@ -124,7 +127,7 @@ select:focus-visible, .btn:focus-visible { outline: 1px solid var(--accent-hi); 
   flex: 0 0 auto;
   display: flex;
   align-items: center;
-  gap: 26px;
+  gap: 20px;
   padding: 9px 16px;
   background: var(--bg-raise);
   border-bottom: 1px solid var(--border);
@@ -138,11 +141,28 @@ select:focus-visible, .btn:focus-visible { outline: 1px solid var(--accent-hi); 
   color: var(--fg);
   min-width: 2ch;
 }
-.stat-hero .stat-val { font-size: 22px; color: var(--good); }
 .stat-unit { font-size: 10px; color: var(--fg-faint); }
 .stat-key { font-size: 10px; color: var(--fg-faint); margin-left: 5px; }
 
-.progress-wrap { flex: 1 1 auto; min-width: 120px; }
+/* 主評価だけを大きく出し、参考値は明確に一段落とす */
+.stat-hero .stat-val { font-size: 24px; color: var(--good); }
+.stat-hero .stat-key { color: var(--fg-dim); }
+.stat-ref { opacity: .5; }
+.stat-ref .stat-val { font-size: 13px; }
+
+.stat-sep {
+  order: 9;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  padding-left: 16px;
+  border-left: 1px solid var(--border);
+  font-size: 9px;
+  letter-spacing: .18em;
+  color: var(--fg-faint);
+}
+
+.progress-wrap { order: 20; flex: 1 1 auto; min-width: 120px; }
 .progress-meta {
   display: flex;
   justify-content: space-between;
@@ -290,8 +310,10 @@ select:focus-visible, .btn:focus-visible { outline: 1px solid var(--accent-hi); 
   gap: 2px;
 }
 .rstat-val { font-family: var(--mono); font-size: 24px; font-variant-numeric: tabular-nums; }
-.rstat-hero { border-color: var(--good); }
-.rstat-hero .rstat-val { color: var(--good); font-size: 30px; }
+.rstat-ref { opacity: .55; }
+.rstat-ref .rstat-val { font-size: 18px; }
+.rstat-hero { border-color: var(--good); grid-column: 1 / -1; }
+.rstat-hero .rstat-val { color: var(--good); font-size: 34px; }
 .rstat-key { font-size: 10px; color: var(--fg-faint); }
 .rstat-note { font-size: 10px; color: var(--warn); min-height: 1em; }
 
