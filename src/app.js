@@ -67,6 +67,15 @@ function hasTypo(buffer, prefixLen) {
   return AUTO_TAIL.test(buffer.slice(prefixLen));
 }
 
+// 行末に残った空白は画面にも実行結果にも現れないので、不一致として扱わない。
+// 空行に自動インデントが残るのが典型例（お手本の空行は 0 文字なのに、
+// エディタは直前のブロックに合わせた字下げを入れてくる）。
+// ただし入力中の最終行だけは、これから文字が続くのでそのまま残す。
+// そうしないと、手で字下げしている最中に進捗が止まって見える。
+function trimLineEnds(text) {
+  return text.replace(/[ \t]+(?=\n)/g, '');
+}
+
 /* ------------------------------------------------------------------ */
 /* 状態                                                                */
 /* ------------------------------------------------------------------ */
@@ -74,6 +83,7 @@ function hasTypo(buffer, prefixLen) {
 const state = {
   problem: null,
   target: '',
+  buffer: '',       // 行末空白を落とした入力内容。判定はすべてこれを見る
   prefix: 0,
   bufLen: 0,
   keystrokes: 0,
@@ -155,8 +165,9 @@ function boot(m) {
   inputEditor.addAction({
     id: 'cp-typing.restart',
     label: 'やり直す',
-    keybindings: [monaco.KeyCode.Escape],
-    precondition: '!suggestWidgetVisible && !parameterHintsVisible && !findWidgetVisible',
+    // Esc は補完候補を閉じるキーなので、やり直しには割り当てない。
+    // 候補を消したつもりで進捗が吹き飛ぶ事故が起きる。
+    keybindings: [monaco.KeyMod.Alt | monaco.KeyCode.KeyR],
     run: () => restart(),
   });
 
@@ -199,7 +210,9 @@ function baseOptions() {
     tabSize: 4,
     insertSpaces: true,
     detectIndentation: false,
-    trimAutoWhitespace: false,
+    // VS Code の既定。自動で入った字下げだけを、その行から離れるときに消す。
+    // 空行に字下げが残るのを発生源で減らせる（判定側でも吸収している）。
+    trimAutoWhitespace: true,
     automaticLayout: true,
     minimap: { enabled: settings.minimap },
     scrollBeyondLastLine: false,
@@ -295,6 +308,7 @@ function restart() {
   $('panes').querySelector('.pane-input').classList.remove('done');
   $('resultModal').hidden = true;
 
+  state.buffer = '';
   state.prefix = 0;
   state.bufLen = 0;
   state.keystrokes = 0;
@@ -333,10 +347,11 @@ function onKeyDown(e) {
 function onInputChanged() {
   if (state.done) return;
 
-  const buffer = inputEditor.getValue();
+  const buffer = trimLineEnds(inputEditor.getValue());
   const prevPrefix = state.prefix;
   const prevLen = state.bufLen;
 
+  state.buffer = buffer;
   state.prefix = commonPrefix(buffer, state.target);
   state.bufLen = buffer.length;
 
@@ -380,7 +395,7 @@ function paintProgress() {
 
   const total = state.target.length;
   const done = Math.min(state.prefix, total);
-  const buffer = inputEditor.getValue();
+  const buffer = state.buffer;
   const typo = hasTypo(buffer, state.prefix);
 
   const list = [];
