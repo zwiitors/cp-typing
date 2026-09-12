@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CP Typing — 競技プログラミング・タイピング練習 (Python)</title>
+<meta name="description" content="VS Code / Codium と同じ Monaco Editor 上で、括弧の自動閉じ・自動インデント・入力補完が効いた状態で競技プログラミング用 Python コードを打つ練習ができます。">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<div id="boot" class="boot">
+  <div class="boot-inner">
+    <div class="boot-spinner"></div>
+    <p>エディタを読み込んでいます…</p>
+  </div>
+</div>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark">&gt;_</span>
+    <span class="brand-name">CP&nbsp;Typing</span>
+    <span class="brand-sub">Python / Monaco</span>
+  </div>
+
+  <div class="topbar-controls">
+    <label class="ctl">
+      <span class="ctl-label">カテゴリ</span>
+      <select id="categorySelect"></select>
+    </label>
+    <label class="ctl">
+      <span class="ctl-label">課題</span>
+      <select id="problemSelect"></select>
+    </label>
+    <button id="customBtn" class="btn" title="好きなコードを貼り付けて練習">貼り付け</button>
+    <button id="settingsBtn" class="btn" title="入力補助の設定">設定</button>
+    <button id="restartBtn" class="btn btn-primary" title="やり直す (Esc)">やり直す</button>
+  </div>
+</header>
+
+<section class="statbar" id="statbar">
+  <div class="stat"><span class="stat-val" id="statTime">0.0</span><span class="stat-unit">秒</span><span class="stat-key">時間</span></div>
+  <div class="stat stat-hero"><span class="stat-val" id="statCpm">0</span><span class="stat-unit">cpm</span><span class="stat-key">実効速度</span></div>
+  <div class="stat"><span class="stat-val" id="statRaw">0</span><span class="stat-unit">cpm</span><span class="stat-key">生打鍵</span></div>
+  <div class="stat"><span class="stat-val" id="statBoost">1.00</span><span class="stat-unit">×</span><span class="stat-key">補完効率</span></div>
+  <div class="stat"><span class="stat-val" id="statAcc">100</span><span class="stat-unit">%</span><span class="stat-key">正確度</span></div>
+  <div class="progress-wrap">
+    <div class="progress-meta"><span id="statProgressLabel">0 / 0 文字</span><span id="statHint" class="hint"></span></div>
+    <div class="progress"><div class="progress-bar" id="progressBar"></div></div>
+  </div>
+</section>
+
+<main class="panes" id="panes">
+  <section class="pane pane-target">
+    <div class="pane-head">
+      <h2 class="pane-title">お手本</h2>
+      <span class="pane-meta" id="problemMeta"></span>
+    </div>
+    <div class="editor-host" id="targetHost"></div>
+  </section>
+
+  <section class="pane pane-input">
+    <div class="pane-head">
+      <h2 class="pane-title">入力</h2>
+      <span class="pane-meta" id="assistMeta"></span>
+    </div>
+    <div class="editor-host" id="inputHost"></div>
+    <div class="pane-foot">
+      <kbd>Tab</kbd> 補完確定 / <kbd>Ctrl</kbd>+<kbd>Space</kbd> 候補表示 / <kbd>Esc</kbd> やり直す
+    </div>
+  </section>
+</main>
+
+<!-- 設定 -->
+<div class="modal" id="settingsModal" hidden>
+  <div class="modal-card">
+    <h3>入力補助の設定</h3>
+    <p class="modal-lead">Codium 実機に寄せるほど実戦的に、切るほど純粋な打鍵練習になります。</p>
+    <ul class="opts">
+      <li><label><input type="checkbox" id="optSuggest"> 入力補完（IntelliSense）</label><span>打ち始めると候補が出ます。Tab / Enter で確定。</span></li>
+      <li><label><input type="checkbox" id="optQuickSuggest"> 自動で候補を開く</label><span>切ると <kbd>Ctrl</kbd>+<kbd>Space</kbd> を押したときだけ出ます。</span></li>
+      <li><label><input type="checkbox" id="optAcceptEnter"> Enter でも補完を確定する</label><span>VS Code の既定はオン（<code>editor.acceptSuggestionOnEnter</code>）。実機に完全に合わせたいときだけ入れてください。オンだと候補が開いたまま Enter を押しても改行されず、以降の行がずれます。</span></li>
+      <li><label><input type="checkbox" id="optSnippet"> 競プロ用スニペット</label><span><code>li</code> → <code>list(map(int, input().split()))</code> など。</span></li>
+      <li><label><input type="checkbox" id="optBrackets"> 括弧・クォートの自動閉じ</label><span><code>(</code> を打つと <code>)</code> が入り、閉じ括弧は打ち抜けます。</span></li>
+      <li><label><input type="checkbox" id="optIndent"> 自動インデント</label><span><code>:</code> の次行で字下げ、<code>return</code> などの次行で戻ります。</span></li>
+      <li><label><input type="checkbox" id="optMinimap"> ミニマップ</label><span>右端の俯瞰表示。</span></li>
+    </ul>
+    <label class="opt-range">フォントサイズ <input type="range" id="optFont" min="12" max="24" step="1"> <span id="optFontVal">15</span>px</label>
+    <div class="modal-actions"><button class="btn btn-primary" id="settingsClose">閉じる</button></div>
+  </div>
+</div>
+
+<!-- 貼り付け -->
+<div class="modal" id="customModal" hidden>
+  <div class="modal-card">
+    <h3>自分のコードで練習</h3>
+    <p class="modal-lead">普段使っているテンプレートや、コンテストで詰まったコードを貼ってください。タブは 4 スペースに変換されます。</p>
+    <textarea id="customText" spellcheck="false" placeholder="import sys&#10;input = sys.stdin.readline&#10;..."></textarea>
+    <div class="modal-actions">
+      <button class="btn" id="customCancel">キャンセル</button>
+      <button class="btn btn-primary" id="customStart">この内容で練習</button>
+    </div>
+  </div>
+</div>
+
+<!-- 結果 -->
+<div class="modal" id="resultModal" hidden>
+  <div class="modal-card modal-result">
+    <h3 id="resultTitle">完了</h3>
+    <p class="modal-lead" id="resultSub"></p>
+    <div class="result-grid">
+      <div class="rstat rstat-hero"><span class="rstat-val" id="rCpm">0</span><span class="rstat-key">実効速度 (cpm)</span><span class="rstat-note" id="rCpmBest"></span></div>
+      <div class="rstat"><span class="rstat-val" id="rTime">0.0</span><span class="rstat-key">タイム (秒)</span><span class="rstat-note" id="rTimeBest"></span></div>
+      <div class="rstat"><span class="rstat-val" id="rAcc">100</span><span class="rstat-key">正確度 (%)</span><span class="rstat-note" id="rMiss"></span></div>
+      <div class="rstat"><span class="rstat-val" id="rBoost">1.00</span><span class="rstat-key">補完効率 (×)</span><span class="rstat-note" id="rKeys"></span></div>
+    </div>
+    <p class="result-comment" id="resultComment"></p>
+    <div class="modal-actions">
+      <button class="btn" id="resultNext">次の課題へ</button>
+      <button class="btn btn-primary" id="resultRetry">もう一度</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.52.2/min/vs/loader.min.js"></script>
+<script type="module" src="src/app.js"></script>
+</body>
+</html>
