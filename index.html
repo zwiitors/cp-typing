@@ -97,6 +97,17 @@
       <li><label><input type="checkbox" id="optMinimap"> ミニマップ</label><span>右端の俯瞰表示。</span></li>
     </ul>
     <label class="opt-range">フォントサイズ <input type="range" id="optFont" min="12" max="24" step="1"> <span id="optFontVal">15</span>px</label>
+
+    <h4 class="opt-head">記録の持ち出し</h4>
+    <p class="modal-lead">別の端末に自己ベストを移すときに使います。読み込みは上書きではなく、課題ごとに良いほうの記録だけが残るので、どちらの端末から先に取り込んでも同じ結果になります。</p>
+    <div class="transfer">
+      <button class="btn" id="exportBtn">ファイルに書き出し</button>
+      <button class="btn" id="importBtn">ファイルから読み込み</button>
+      <input type="file" id="importFile" accept="application/json,.json" hidden>
+    </div>
+    <label class="opt-check"><input type="checkbox" id="optImportSettings"> 入力補助の設定も一緒に取り込む</label>
+    <p class="transfer-msg" id="transferMsg" hidden></p>
+
     <div class="modal-actions"><button class="btn btn-primary" id="settingsClose">閉じる</button></div>
   </div>
 </div>

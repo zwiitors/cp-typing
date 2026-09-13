@@ -112,6 +112,31 @@ VS Code / VSCodium と同じエディタエンジン（Monaco Editor）の上で
 | `adj` | 隣接リスト構築 |
 | `bfs` / `dij` / `uf` / `sieve` | BFS / ダイクストラ / Union-Find / エラトステネスの篩 |
 
+## 記録を別の端末に移す
+
+自己ベストはブラウザの `localStorage` に入るので、端末をまたぎません。
+設定モーダルの「記録の持ち出し」から JSON で書き出し、移りたい端末で読み込んでください。
+
+読み込みは**上書きではなくマージ**です。課題ごとに、速度・正確度・補完効率は大きいほう、
+タイム・打鍵数・ミスは小さいほうが残ります。この規則は冪等（同じファイルを二度読んでも
+変わらない）で可換（どちらの端末から先に取り込んでも同じ）なので、バージョン番号も
+競合解決の画面も要りません。
+
+試行回数だけは「良いほう」がないので、端末ごとのカウンタで持ちます。
+
+```json
+{ "runs": { "dev_a1b2c3d4": 12, "dev_9f8e7d6c": 7 } }
+```
+
+表示するのは合計の 19 回です。端末ごとに持てば、max では過小に、加算では二重計上に
+なる問題の両方を避けられます。端末 ID は初回に乱数で作って `cp-typing:device:v1` に
+保存するだけのもので、個人を識別する情報は入っていません。
+
+入力補助の設定も同じファイルに入りますが、取り込むかどうかは任意です
+（記録と違って「良い・悪い」がなく、端末ごとに変えたいことがあるため、既定では取り込みません）。
+
+ファイルの形式が合わない・壊れている場合は、理由を表示するだけで手元の記録には一切触れません。
+
 ## 課題を足す
 
 [`src/problems.js`](src/problems.js) の `RAW` 配列に追記するだけです。
@@ -143,14 +168,40 @@ ES モジュールを使っているので `file://` では動きません。何
 ## 構成
 
 ```
-index.html            画面
-assets/style.css      スタイル（VS Code Dark+ 寄せ）
-src/app.js            進捗判定・計測・UI
-src/python-assist.js  言語設定と補完プロバイダ
-src/problems.js       課題データ
+index.html              画面
+assets/style.css        スタイル（VS Code Dark+ 寄せ）
+src/app.js              進捗判定・計測・UI
+src/python-assist.js    言語設定と補完プロバイダ
+src/problems.js         課題データ
+src/records.js          記録の表現・マージ・持ち出し（DOM に依存しない）
+test/records.test.js    src/records.js の単体テスト
+tools/e2e-transfer.mjs  実ブラウザでの動作確認（CDP）
 ```
 
 Monaco Editor 0.52.2 を cdnjs から読み込むだけで、依存パッケージもビルド手順もありません。
+`package.json` があるのは Node に `src/*.js` を ES モジュールとして読ませるためで、
+インストールするものはありません。
+
+## テスト
+
+```bash
+node --test
+```
+
+記録のマージ規則は端末をまたいで壊れると痛いので、[`src/records.js`](src/records.js) は
+DOM から切り離して単体テストしています（冪等性・可換性・旧形式からの移行・壊れた入力）。
+
+UI の配線のほうは実ブラウザで確認します。ローカルサーバーと、CDP を開けた Chrome を
+上げてから実行してください。
+
+```bash
+python -m http.server 8765 &
+chrome --headless=new --remote-debugging-port=9222 --user-data-dir=/tmp/cp-typing-profile about:blank &
+node tools/e2e-transfer.mjs
+```
+
+実際にキーイベントを送って完走させ、書き出し・読み込み・二重取り込み・壊れたファイルの
+扱いまで通します。
 
 ## 実装メモ
 

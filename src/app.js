@@ -1,5 +1,9 @@
 import { PROBLEMS, CATEGORIES, problemById, normalizeCode, CUSTOM_ID } from './problems.js';
 import { configurePython, registerPythonCompletion } from './python-assist.js';
+import {
+  ensureDeviceId, migrateRecords, totalRuns,
+  mergeRecords, countChanges, buildExport, parseImport,
+} from './records.js';
 
 const MONACO_BASE = 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.52.2/min';
 const FONT_STACK = '"Cascadia Code", Consolas, "SFMono-Regular", Menlo, "BIZ UDGothic", monospace';
@@ -23,6 +27,9 @@ const DEFAULT_SETTINGS = {
 
 const $ = (id) => document.getElementById(id);
 
+const MODAL_IDS = ['settingsModal', 'customModal', 'resultModal'];
+const anyModalOpen = () => MODAL_IDS.some((id) => $(id) && !$(id).hidden);
+
 /* ------------------------------------------------------------------ */
 /* 永続化                                                              */
 /* ------------------------------------------------------------------ */
@@ -45,7 +52,11 @@ function writeJSON(key, value) {
 }
 
 let settings = readJSON(SETTINGS_KEY, DEFAULT_SETTINGS);
-let records = readJSON(RECORDS_KEY, {});
+// runs は端末ごとカウンタ。古い形式（素の数値）は読み込み時に直して置き換える。
+let records = migrateRecords(readJSON(RECORDS_KEY, {}));
+writeJSON(RECORDS_KEY, records);
+
+const deviceId = ensureDeviceId(localStorage);
 
 /* ------------------------------------------------------------------ */
 /* 判定ロジック                                                        */
@@ -321,7 +332,9 @@ function restart() {
   stopTick();
   paintProgress();
   renderStats(0);
-  inputEditor.focus();
+  // モーダルが開いているあいだは裏のエディタを掴まない。掴むと、見えない
+  // ところで打鍵が拾われて計測が始まってしまう。閉じるときに focus される。
+  if (!anyModalOpen()) inputEditor.focus();
 }
 
 /* ------------------------------------------------------------------ */
@@ -553,7 +566,7 @@ function saveRecord(r) {
     boost: old.boost ?? 0,
     keys: old.keys ?? Infinity,
     miss: old.miss ?? Infinity,
-    runs: old.runs ?? 0,
+    runs: totalRuns(old),
   };
   const improved = {
     cpm: r.cpm > prev.cpm,
@@ -571,10 +584,11 @@ function saveRecord(r) {
     boost: Math.max(prev.boost, r.boost),
     keys: Math.min(prev.keys, r.keys),
     miss: Math.min(prev.miss, r.miss),
-    runs: prev.runs + 1,
+    // 回数だけはこの端末の分を増やす。他の端末の分はそのまま持ち越す。
+    runs: { ...(old.runs || {}), [deviceId]: ((old.runs || {})[deviceId] ?? 0) + 1 },
   };
   writeJSON(RECORDS_KEY, records);
-  return { prev, improved, runs: records[id].runs };
+  return { prev, improved, runs: totalRuns(records[id]) };
 }
 
 const CARDS = {
@@ -707,6 +721,80 @@ function refreshProblemOptions() {
   return list;
 }
 
+/* ------------------------------------------------------------------ */
+/* 記録の持ち出し                                                       */
+/* ------------------------------------------------------------------ */
+
+function showTransfer(text, bad = false) {
+  const el = $('transferMsg');
+  el.textContent = text;
+  el.classList.toggle('bad', bad);
+  el.hidden = false;
+}
+
+function exportRecords() {
+  const data = buildExport({ records, settings });
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const d = new Date();
+  const stamp = [d.getFullYear(), d.getMonth() + 1, d.getDate()]
+    .map((n, i) => String(n).padStart(i ? 2 : 4, '0')).join('');
+  a.href = url;
+  a.download = `cp-typing-${stamp}.json`;
+  // Firefox は document に入っていない <a> のクリックを無視する。
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+
+  const n = Object.keys(data.records).length;
+  showTransfer(`${n} 課題の記録を書き出しました。別の端末でこのファイルを読み込んでください。`);
+}
+
+async function importRecords(file) {
+  let text;
+  try {
+    text = await file.text();
+  } catch {
+    showTransfer('ファイルを読めませんでした。', true);
+    return;
+  }
+
+  const res = parseImport(text);
+  // 少しでも怪しければ手元のデータには触らない。
+  if (!res.ok) {
+    showTransfer(res.error, true);
+    return;
+  }
+
+  const merged = mergeRecords(records, res.records);
+  const { added, improved } = countChanges(records, merged);
+  records = merged;
+  writeJSON(RECORDS_KEY, records);
+
+  let note = '';
+  if ($('optImportSettings').checked) {
+    const before = settings.mode;
+    // 見知らぬキーを持ち込まないよう、既定にあるものだけ受け取る。
+    for (const key of Object.keys(DEFAULT_SETTINGS)) {
+      if (key in res.settings) settings[key] = res.settings[key];
+    }
+    writeJSON(SETTINGS_KEY, settings);
+    applySettingsToForm();
+    applyEditorSettings();
+    if (settings.mode !== before) restart();   // 評価対象が変わるので測り直す
+    note = ' 設定も取り込みました。';
+  }
+
+  refreshProblemOptions();
+  showTransfer(
+    added + improved === 0
+      ? `取り込みました。手元の記録のほうが良かったので、変わった課題はありません。${note}`
+      : `${added + improved} 課題を取り込みました（新規 ${added} / 自己ベスト更新 ${improved}）。${note}`,
+  );
+}
+
 function wireUI() {
   $('modeSelect').addEventListener('change', (e) => {
     settings.mode = e.target.value;
@@ -750,7 +838,20 @@ function wireUI() {
     writeJSON(SETTINGS_KEY, settings);
     applyEditorSettings();
   });
-  $('settingsBtn').addEventListener('click', () => { $('settingsModal').hidden = false; });
+  // --- 記録の持ち出し ---
+  $('exportBtn').addEventListener('click', exportRecords);
+  $('importBtn').addEventListener('click', () => $('importFile').click());
+  $('importFile').addEventListener('change', (e) => {
+    const file = e.target.files && e.target.files[0];
+    // 同じファイルを続けて選んでも change が飛ぶように毎回空にする。
+    e.target.value = '';
+    if (file) importRecords(file);
+  });
+
+  $('settingsBtn').addEventListener('click', () => {
+    $('settingsModal').hidden = false;
+    $('transferMsg').hidden = true;      // 前回の結果を引きずらない
+  });
   $('settingsClose').addEventListener('click', () => {
     $('settingsModal').hidden = true;
     inputEditor.focus();
@@ -802,7 +903,7 @@ function wireUI() {
   });
 
   // モーダルは背景クリックで閉じる
-  for (const id of ['settingsModal', 'customModal', 'resultModal']) {
+  for (const id of MODAL_IDS) {
     $(id).addEventListener('mousedown', (e) => {
       if (e.target === $(id)) {
         $(id).hidden = true;
@@ -813,7 +914,7 @@ function wireUI() {
 
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;
-    for (const id of ['settingsModal', 'customModal', 'resultModal']) {
+    for (const id of MODAL_IDS) {
       if (!$(id).hidden) {
         $(id).hidden = true;
         inputEditor.focus();
