@@ -175,7 +175,8 @@ src/python-assist.js    言語設定と補完プロバイダ
 src/problems.js         課題データ
 src/records.js          記録の表現・マージ・持ち出し（DOM に依存しない）
 test/records.test.js    src/records.js の単体テスト
-tools/e2e-transfer.mjs  実ブラウザでの動作確認（CDP）
+tools/e2e-transfer.mjs  記録の持ち出しの動作確認（CDP）
+tools/e2e-marker.mjs    マーカーが字形を潰していないことの確認（CDP・画素比較）
 ```
 
 Monaco Editor 0.52.2 を cdnjs から読み込むだけで、依存パッケージもビルド手順もありません。
@@ -198,10 +199,13 @@ UI の配線のほうは実ブラウザで確認します。ローカルサー�
 python -m http.server 8765 &
 chrome --headless=new --remote-debugging-port=9222 --user-data-dir=/tmp/cp-typing-profile about:blank &
 node tools/e2e-transfer.mjs
+node tools/e2e-marker.mjs
 ```
 
-実際にキーイベントを送って完走させ、書き出し・読み込み・二重取り込み・壊れたファイルの
-扱いまで通します。
+`e2e-transfer.mjs` は実際にキーイベントを送って完走させ、書き出し・読み込み・
+二重取り込み・壊れたファイルの扱いまで通します。
+`e2e-marker.mjs` はスクリーンショットの画素を読んで、マーカーの棒が字の上に
+乗っていないことを確かめます。
 
 ## 実装メモ
 
@@ -215,3 +219,10 @@ node tools/e2e-transfer.mjs
   副産物として、ローカル変数を組み込み関数より上に出す順位付けができるようになりました。
 - **スニペットを `sortText` の最上位に置くと Enter が暴発する。**
   `n` と打っただけで `na` スニペットが選択されるため、組み込み関数より下げてあります。
+- **「次に打つ 1 文字」のマーカーは、字の描画範囲にインクを乗せてはいけない。**
+  当初はセルの下端に 2px の下線を引いていましたが、これが `q` と `g` を
+  見分ける唯一の手がかりであるディセンダに重なり、打ち間違いの原因になっていました
+  （`p` `y` も同様）。下線は `::after` で行間に逃がしてあります。
+  字形の話なので拡大して見ないと気づけません。`tools/e2e-marker.mjs` が
+  画素を見て、棒がセルの中に入っていないことと、セルの外に出ていることの
+  両方を確かめます（後者が無いと、棒を消すだけの変更も通ってしまいます）。

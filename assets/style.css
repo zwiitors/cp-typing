@@ -227,16 +227,31 @@ select:focus-visible, .btn:focus-visible { outline: 1px solid var(--accent-hi); 
 
 /* ---------- target decorations ---------- */
 .tt-typed { opacity: .34; }
-.tt-caret {
-  background: rgba(78, 201, 176, .30);
-  border-radius: 2px;
-  box-shadow: inset 0 -2px 0 var(--good);
-}
+.tt-caret,
 .tt-caret-bad {
-  background: rgba(241, 76, 76, .34);
+  position: relative;
   border-radius: 2px;
-  box-shadow: inset 0 -2px 0 var(--bad);
 }
+.tt-caret { background: rgba(78, 201, 176, .20); }
+.tt-caret-bad { background: rgba(241, 76, 76, .24); }
+
+/* 棒はセルの中ではなく、行間（セルの外）に置く。
+   q と g はディセンダの形でしか見分けられないのに、セル下端の棒が
+   ちょうどそこに重なって、打ち間違いの原因になっていた。
+   位置を示す役目は棒に残したいので、消さずに字の外へ逃がしている。
+   塗りを薄くしてあるのは、棒で位置が分かるぶん字の contrast を稼ぐため。 */
+.tt-caret::after,
+.tt-caret-bad::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  height: 2px;
+  border-radius: 1px;
+}
+.tt-caret::after { background: var(--good); }
+.tt-caret-bad::after { background: var(--bad); }
 .tt-line {
   background: rgba(78, 201, 176, .07);
   box-shadow: inset 2px 0 0 var(--good);
