@@ -4,6 +4,7 @@
  *   node e2e-transfer.mjs [url]
  *
  * 事前に http サーバと --remote-debugging-port=9222 の Chrome を上げておくこと。
+ * 別のポートに繋ぐときは環境変数 CDP_PORT を指定する。
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -21,7 +22,7 @@ const check = (name, ok, detail = '') => {
   if (!ok) failures += 1;
 };
 
-const cdp = await connect();
+const cdp = await connect(Number(process.env.CDP_PORT ?? 9222));
 await cdp.send('Page.enable');
 await cdp.send('Runtime.enable');
 await cdp.send('Log.enable');
