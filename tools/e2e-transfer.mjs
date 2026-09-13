@@ -28,7 +28,7 @@ await cdp.send('Log.enable');
 
 const consoleErrors = [];
 cdp.on('Log.entryAdded', ({ entry }) => {
-  if (entry.level === 'error') consoleErrors.push(entry.text);
+  if (entry.level === 'error') consoleErrors.push(`${entry.text} @ ${entry.url ?? '?'}`);
 });
 cdp.on('Runtime.exceptionThrown', ({ exceptionDetails }) => {
   consoleErrors.push(exceptionDetails.exception?.description ?? 'exception');
